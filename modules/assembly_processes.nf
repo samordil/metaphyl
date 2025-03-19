@@ -108,6 +108,7 @@ process REMOVE_HUMAN_READS {
 
 // STEP 04: Remove adaptors using porechop
 process PORECHOP {
+    errorStrategy 'ignore'
     tag "Processing ${filename}"
     publishDir "${params.outdir}/step1_porechop", mode:'copy'    
 
