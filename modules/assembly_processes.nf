@@ -49,8 +49,8 @@ process HG_INDEXING {
     tag "Indexing human genome reference"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'oras://community.wave.seqera.io/library/minimap2:2.28--74e328e3ff3fa395' :
-        'community.wave.seqera.io/library/minimap2:2.28--78db3d0b6e5cb797' }" 
+        'oras://community.wave.seqera.io/library/minimap2_pip_wget:5235e505c08fd046' :
+        'community.wave.seqera.io/library/minimap2_pip_wget:ab5775e5fa91086a' }" 
 
     input: 
         path ref_genome
