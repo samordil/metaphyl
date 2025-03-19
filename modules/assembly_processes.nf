@@ -176,7 +176,7 @@ process MASH_CLASSIFICATION {
         # mash sketch -o ${filename}.msh $fastq_file
 
         # Run mash screen Using the Prebuilt Database
-        mash screen -w -p 16 mash_downloaded_db $fastq_file | sort -gr > ${filename}.mash.results.txt
+        mash screen -w -p 16 mash_downloaded_db.msh $fastq_file | sort -gr > ${filename}.mash.results.txt
     fi
 
     """
