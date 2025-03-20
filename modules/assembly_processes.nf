@@ -150,7 +150,7 @@ process MASH_CLASSIFICATION {
 
     input: 
         path mash_database
-        each(path fastq_file)   // [fastq_dir]
+        each path(fastq_file)  // [fastq_dir]
 
 
     output:
