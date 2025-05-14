@@ -65,7 +65,7 @@ workflow {
     )
 
     // MODULE: Remove adapters
-    PORECHOP (REMOVE_HUMAN_READS.out.fastq_gz)
+    PORECHOP (REMOVE_HUMAN_READS.out.fastq)
 
     // MODULE: Denove genome assembly
     FLYE (PORECHOP.out.fastq_gz)
