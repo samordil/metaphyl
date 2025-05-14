@@ -67,10 +67,10 @@ process HG_INDEXING {
         minimap2 -d indexed_human_ref.mmi $human_genome
     else
         # download the genome
-        wget -O human.gz ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.39_GRCh38.p13/GCF_000001405.39_GRCh38.p13_genomic.fna.gz
+        wget -O GCF_000001405.39_GRCh38.p13_genomic.fna.gzftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.39_GRCh38.p13/GCF_000001405.39_GRCh38.p13_genomic.fna.gz
         
         # Index the genome
-        minimap2 -d indexed_human_ref.mmi human.gz
+        minimap2 -d indexed_human_ref.mmi GCF_000001405.39_GRCh38.p13_genomic.fna.gz
     fi
 
     """
@@ -92,7 +92,7 @@ process REMOVE_HUMAN_READS {
     
     output:
     // Expected -> barcode01.fastq.gz file
-    path "${sample_id}.non_human_reads.fastq.gz"     ,   emit: fastq_gz 
+    path "${sample_id}.non_human_reads.fastq"     ,   emit: fastq
 
     script:
     
@@ -102,39 +102,7 @@ process REMOVE_HUMAN_READS {
 
     minimap2 -ax map-ont $indexed_ref ${sample_id}.fastq.gz | \
         samtools view -b -f 4 | \
-        samtools sort | samtools fastq | gzip > ${sample_id}.non_human_reads.fastq.gz
-    """
-}
-
-// STEP 04: Remove adaptors using porechop
-process PORECHOP {
-    errorStrategy 'ignore'
-    tag "Processing ${filename}"
-    publishDir "${params.outdir}/step1_porechop", mode:'copy'    
-
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/porechop:0.2.4--py39h2de1943_9' :
-        'biocontainers/porechop:0.2.4--py310h184ae93_9' }"
-
-    input:
-    // expecting -> [ path/dir/barcorde01 ]
-    path fastq_file
-    
-    output:
-    // Expected -> barcode01.fastq file
-    path "${filename}.porechopped.fastq"     ,   emit: fastq
-
-    script:
-
-    filename = fastq_file.simpleName
-
-    """
-    # adaptor removal 
-     porechop \\
-        -i $fastq_file \\
-        --threads $task.cpus \\
-        --format fastq \\
-        -o ${filename}.porechopped.fastq
+        samtools sort | samtools fastq > ${sample_id}.non_human_reads.fastq
     """
 }
 
@@ -170,14 +138,40 @@ process MASH_CLASSIFICATION {
         mash screen -w -p 16 $mash_db $fastq_file | sort -gr > ${filename}.mash.results.txt
     else
         # download the genome
-        wget -O mash_downloaded_db.msh https://gembox.cbcb.umd.edu/mash/refseq.genomes.k21.s1000.msh
+        wget -O refseq.genomes.k21s1000.msh https://gembox.cbcb.umd.edu/mash/refseq.genomes.k21s1000.msh
 
         # # create sketch from the sample
         # mash sketch -o ${filename}.msh $fastq_file
 
         # Run mash screen Using the Prebuilt Database
-        mash screen -w -p 16 mash_downloaded_db.msh $fastq_file | sort -gr > ${filename}.mash.results.txt
+        mash screen -w -p 16 refseq.genomes.k21s1000.msh $fastq_file | sort -gr > ${filename}.mash.results.txt
     fi
 
+    """
+}
+
+
+// STEP 05: Generate the concatenated tsv file
+process GENERATE_FINAL_REPORT {
+    errorStrategy 'ignore'
+    tag "generating final report"
+    publishDir "${params.outdir}/final_mash", mode:'copy' 
+
+    container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
+    'docker://samordil/python-pandas-dateutil:1.0.0' : 
+    'docker.io/samordil/python-pandas-dateutil:1.0.0'}"
+    
+    input:
+        path tsv_file
+
+    output:
+        path "mash_summary_out.tsv"   ,      emit: tsv
+
+    script:     // This script is bundled with the pipeline, in kwtrp-peo/viralphyl/bin/
+
+    """
+   mash_summary.py \\
+        --input $tsv_file \\
+        --output mash_summary_out.tsv
     """
 }

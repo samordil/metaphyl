@@ -10,8 +10,8 @@ nextflow.enable.dsl=2
  include{   GENERATE_SAMPLESHEET;
             HG_INDEXING;
             REMOVE_HUMAN_READS;
-            PORECHOP;
-            MASH_CLASSIFICATION
+            MASH_CLASSIFICATION;
+            GENERATE_FINAL_REPORT
           } from "./modules/assembly_processes"
 
 /*
@@ -60,10 +60,15 @@ workflow {
     )
 
     // MODULE: Remove adapters
-    PORECHOP (REMOVE_HUMAN_READS.out.fastq_gz)
+    // PORECHOP (REMOVE_HUMAN_READS.out.fastq_gz)
 
     // MODULE: Classify reads
     MASH_CLASSIFICATION ( ch_mash_db,
-                        PORECHOP.out.fastq
+                        REMOVE_HUMAN_READS.out.fastq
                         )
+
+    // MODULE: Aggregate mash txts
+    GENERATE_FINAL_REPORT (
+        MASH_CLASSIFICATION.out.txt.collect()
+    )
 }

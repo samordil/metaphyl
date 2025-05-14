@@ -308,3 +308,36 @@ process SEQKIT {
         -r $assembly_fasta | seqkit head -n 1 > ${barcordeName}_longest_contig.fasta
     """
 }
+
+
+// STEP 04: Remove adaptors using porechop
+// process PORECHOP {
+//     errorStrategy 'ignore'
+//     tag "Processing ${filename}"
+//     publishDir "${params.outdir}/step1_porechop", mode:'copy'    
+
+//     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+//         'https://depot.galaxyproject.org/singularity/porechop:0.2.4--py39h2de1943_9' :
+//         'biocontainers/porechop:0.2.4--py310h184ae93_9' }"
+
+//     input:
+//     // expecting -> [ path/dir/barcorde01 ]
+//     path fastq_file
+    
+//     output:
+//     // Expected -> barcode01.fastq file
+//     path "${filename}.porechopped.fastq"     ,   emit: fastq
+
+//     script:
+
+//     filename = fastq_file.simpleName
+
+//     """
+//     # adaptor removal 
+//      porechop \\
+//         -i $fastq_file \\
+//         --threads $task.cpus \\
+//         --format fastq \\
+//         -o ${filename}.porechopped.fastq
+//     """
+// }
