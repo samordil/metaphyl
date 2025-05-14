@@ -11,7 +11,12 @@ nextflow.enable.dsl=2
             HG_INDEXING;
             REMOVE_HUMAN_READS;
             MASH_CLASSIFICATION;
-            GENERATE_FINAL_REPORT
+            GENERATE_FINAL_REPORT;
+            PORECHOP;
+            FLYE;
+            QUAST;
+            MULTIQC;
+            SEQKIT
           } from "./modules/assembly_processes"
 
 /*
@@ -60,7 +65,26 @@ workflow {
     )
 
     // MODULE: Remove adapters
-    // PORECHOP (REMOVE_HUMAN_READS.out.fastq_gz)
+    PORECHOP (REMOVE_HUMAN_READS.out.fastq_gz)
+
+    // MODULE: Denove genome assembly
+    FLYE (PORECHOP.out.fastq_gz)
+
+    // Generate assembly statistics
+    QUAST(
+      FLYE.out.assembly_fasta
+    )
+
+    // Aggregage report for visualization
+    MULTIQC (
+      QUAST.out.quast_report_dir.collect(),
+      params.multiqc_title
+    )
+
+  // Get the longest contigs per sample
+    SEQKIT (
+      FLYE.out.assembly_fasta
+    )
 
     // MODULE: Classify reads
     MASH_CLASSIFICATION ( ch_mash_db,
@@ -72,3 +96,4 @@ workflow {
         MASH_CLASSIFICATION.out.txt.collect()
     )
 }
+

@@ -175,3 +175,159 @@ process GENERATE_FINAL_REPORT {
         --output mash_summary_out.tsv
     """
 }
+
+
+// Remove adaptors using porechop
+process PORECHOP {
+    tag "Processing ${barcordeName}"
+    errorStrategy 'ignore'
+    publishDir "${params.outdir}/porechop", mode:'copy'    
+
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/porechop:0.2.4--py39h2de1943_9' :
+        'biocontainers/porechop:0.2.4--py310h184ae93_9' }"
+
+    input:
+    // expecting -> [ path/dir/barcorde01 ]
+    path barcordDir
+    
+    output:
+    // Expected -> barcode01.fastq file
+    path "${barcordeName}.porechopped.fastq.gz"     ,   emit: fastq_gz 
+
+    script:
+
+    barcordeName = barcordDir.simpleName
+
+    """
+    # adaptor removal 
+     porechop \\
+        -i $barcordDir \\
+        --threads $task.cpus \\
+        --format fastq.gz \\
+        -o ${barcordeName}.porechopped.fastq.gz
+    """
+}
+
+// genome assembly 
+process FLYE { 
+    tag "Processing ${barcordeName}"
+    errorStrategy 'ignore'
+    publishDir "${params.outdir}/flye/", mode:'copy'    
+
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/flye%3A2.9.6--py39h475c85d_0' :
+        'biocontainers/flye:2.9.6--py39h475c85d_0' }"
+
+    input:
+    // expecting -> [ path/to/barcorde01.fastq.gz ] from cutadapt
+    path trimmed_fasta_gz
+    
+    output:
+    // Expected -> RSVB_barcode01.fastq file
+    path "${barcordeName}.assembly.fasta"       , emit: assembly_fasta
+
+    script:
+
+    barcordeName = trimmed_fasta_gz.simpleName
+
+    """
+    flye \\
+        --nano-raw  $trimmed_fasta_gz \\
+        --genome-size 13k \\
+        --threads $task.cpus \\
+        --iterations 3 \\
+        --out-dir $barcordeName
+
+    # Rename the assembly.fasta file to the sample barcode name
+    mv ${barcordeName}/assembly.fasta ${barcordeName}.assembly.fasta
+    """
+}
+
+// Get assembly statistics using quast
+process QUAST { 
+    tag "Processing ${barcordeName}"
+    publishDir "${params.outdir}/quast/", mode:'copy'
+
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/a5/a515d04307ea3e0178af75132105cd36c87d0116c6f9daecf81650b973e870fd/data' :
+        'community.wave.seqera.io/library/quast:5.3.0--755a216045b6dbdd' }"
+
+    input:
+    // expecting -> [ path/to/assembly_fasta ] from flye
+    path assembly_fasta
+    
+    output:
+    // Expected -> quast_result dir for multiqc
+    path "${barcordeName}"      , emit: quast_report_dir
+
+    script:
+    barcordeName = assembly_fasta.simpleName
+
+    """
+    quast.py \\
+    --threads $task.cpus \\
+    --no-plots \\
+    --no-html \\
+    --no-icarus \\
+    --no-snps \\
+    --no-read-stats \\
+    --output-dir $barcordeName $assembly_fasta 
+
+    # mv ${barcordeName}/report.tsv ${barcordeName}.report.tsv
+    """
+}
+
+// Get assembly statistics using quast
+process MULTIQC { 
+    tag "Aggregating all reports"
+    publishDir "${params.outdir}/multiqc/", mode:'copy'    
+
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/multiqc:1.28--pyhdfd78af_0' :
+        'biocontainers/multiqc:1.28--pyhdfd78af_0' }"
+
+    input:
+    // expecting -> [ path/to/assembly_fasta ] from flye
+    path all_reports
+    val title_name
+    
+    output:
+    // Expected -> quast_result dir for multiqc
+    path "flye_assembly_report.html"      , emit: multqc_report
+
+    script:
+    """
+    multiqc $all_reports \\
+    --title "$title_name" \\
+    --filename flye_assembly_report.html
+
+    """
+}
+
+// Get the longest contigs
+process SEQKIT { 
+    tag "Processing ${barcordeName}"
+    publishDir "${params.outdir}/longest_contigs", mode:'copy'  
+
+    container "${workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container
+        ? 'https://depot.galaxyproject.org/singularity/seqkit:2.9.0--h9ee0642_0'
+        : 'biocontainers/seqkit:2.9.0--h9ee0642_0'}"  
+
+    input:
+    // expecting -> [ path/to/barcorde01 ]
+    path assembly_fasta
+    
+    output:
+    // Expected -> RSVB_barcode01.fastq file from porechop
+    path "${barcordeName}_longest_contig.fasta"       , emit: fasta
+
+    script:
+    barcordeName = assembly_fasta.simpleName
+
+    """
+    # Get the longest contig
+    seqkit sort -l \\
+        -r $assembly_fasta | seqkit head -n 1 > ${barcordeName}_longest_contig.fasta
+    """
+}
