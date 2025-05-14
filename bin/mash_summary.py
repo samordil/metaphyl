@@ -2,40 +2,59 @@
 
 import argparse
 import pandas as pd
+from pathlib import Path
 
-# Argument parser to accept input files and output file
-parser = argparse.ArgumentParser(description="Extract top two rows from MASH results and save as TSV.")
-parser.add_argument("-i", "--input", nargs="+", required=True, help="List of MASH results files (space-separated)")
-parser.add_argument("-o", "--output", required=True, help="Output TSV file")
-args = parser.parse_args()
-
-# Prepare a list to store extracted data
-summary_data = []
-
-# Process each input file
-for file_path in args.input:
-    sample_name = file_path.split(".")[0]  # Extract sample name (before first dot)
-
-    # Read the first two lines from the file
-    with open(file_path, "r") as f:
-        lines = [line.strip().split("\t") for line in f.readlines()[:2]]  # Read & split by tab
-
-    # Extract relevant columns (first two + last column)
-    first_row = True
-    for line in lines:
-        if len(line) >= 3:  # Ensure the line has enough columns
-            identity, coverage, organism = line[0], line[1], line[-1]
-            if first_row:
-                summary_data.append([sample_name, identity, coverage, organism])
-                first_row = False
-            else:
-                summary_data.append(["", identity, coverage, organism])  # Blank sample name for subsequent rows
+def main():
+    parser = argparse.ArgumentParser(description="Extract top N rows from MASH results and save as TSV.")
+    parser.add_argument("-i", "--input", nargs="+", required=True, help="List of MASH results files")
+    parser.add_argument("-o", "--output", required=True, help="Output TSV file")
+    parser.add_argument("-n", "--num_lines", type=int, default=3, 
+                       help="Number of lines to output per file (default: 2)")
     
-    # Add an extra blank line after each sample block
-    summary_data.append(["", "", "", ""])
+    args = parser.parse_args()
+    summary_data = []
 
-# Convert to DataFrame and save as TSV
-df = pd.DataFrame(summary_data, columns=["Sample", "Identity", "Coverage", "Organism Found"])
-df.to_csv(args.output, sep="\t", index=False, header=True)
+    for file_path in args.input:
+        try:
+            sample_name = Path(file_path).stem  # More robust filename extraction
+            
+            with open(file_path, "r") as f:
+                # Read only needed lines (memory efficient)
+                lines = []
+                for _ in range(args.num_lines):
+                    line = next(f, None)
+                    if line is None:
+                        break
+                    lines.append(line.strip().split("\t"))
+                
+                # Process lines if they have enough columns
+                for i, line in enumerate(lines):
+                    if len(line) >= 3:
+                        row = [
+                            sample_name if i == 0 else "",  # Only show sample name in first row
+                            line[0],  # identity
+                            line[1],  # coverage
+                            line[-1]  # organism
+                        ]
+                        summary_data.append(row)
+            
+            # Add separator only if we found data
+            if lines:
+                summary_data.append(["", "", "", ""])
+                
+        except Exception as e:
+            print(f"Error processing {file_path}: {str(e)}")
+            continue
 
-print(f"Summary saved to {args.output}")
+    if summary_data:
+        df = pd.DataFrame(
+            summary_data,
+            columns=["Sample", "Identity", "Coverage", "Organism Found"]
+        )
+        df.to_csv(args.output, sep="\t", index=False)
+        print(f"Successfully saved summary to {args.output}")
+    else:
+        print("No valid data found to save.")
+
+if __name__ == "__main__":
+    main()
