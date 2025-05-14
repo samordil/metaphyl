@@ -16,7 +16,8 @@ def main():
 
     for file_path in args.input:
         try:
-            sample_name = Path(file_path).stem  # More robust filename extraction
+            # Extract sample name as everything before the first dot
+            sample_name = Path(file_path).name.split('.')[0]
             
             with open(file_path, "r") as f:
                 # Read only needed lines (memory efficient)
