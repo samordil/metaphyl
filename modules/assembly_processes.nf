@@ -424,8 +424,8 @@ process AUTO_REF {
     publishDir "${params.outdir}/auto_ref", mode:'copy' 
 
     container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
-    'oras://community.wave.seqera.io/library/minimap2_samtools_pip_biopython:bbb619d04ed4d583' : 
-    'community.wave.seqera.io/library/minimap2_samtools_pip_biopython:74cbfe42612aa285'}"
+    'docker://samordil/artic-multipurpose:1.6.2 : 
+    'docker.io/samordil/artic-multipurpose:1.6.2'}"
     
     input:
         path multi_ref_fasta
@@ -455,9 +455,9 @@ process MINIMAP_SAMTOOLS {
     tag "generating final report"
     publishDir "${params.outdir}/consensus", mode:'copy' 
 
-    container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
-    'oras://community.wave.seqera.io/library/minimap2_samtools_pip_biopython:bbb619d04ed4d583' : 
-    'community.wave.seqera.io/library/minimap2_samtools_pip_biopython:74cbfe42612aa285'}"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'oras://community.wave.seqera.io/library/minimap2_samtools:5919d63e7b60a09d' :
+        'community.wave.seqera.io/library/minimap2_samtools:33bb43c18d22e29c' }"
 
   tag {filename}
 
