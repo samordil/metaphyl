@@ -424,7 +424,7 @@ process AUTO_REF {
     publishDir "${params.outdir}/auto_ref", mode:'copy' 
 
     container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
-    'docker://samordil/artic-multipurpose:1.6.2 : 
+    'docker://samordil/artic-multipurpose:1.6.2' : 
     'docker.io/samordil/artic-multipurpose:1.6.2'}"
     
     input:
