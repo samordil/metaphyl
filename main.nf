@@ -20,7 +20,8 @@ nextflow.enable.dsl=2
             KRAKEN2;
             AUTO_REF;
             LINUX_GREP;
-            SEQKIT_GREP
+            SEQKIT_GREP;
+            MINIMAP_SAMTOOLS
           } from "./modules/assembly_processes"
 
 /*
