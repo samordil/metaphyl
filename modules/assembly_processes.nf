@@ -310,9 +310,9 @@ process SEQKIT {
     tag "Processing ${barcordeName}"
     publishDir "${params.outdir}/longest_contigs", mode:'copy'  
 
-    container "${workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container
-        ? 'https://depot.galaxyproject.org/singularity/seqkit:2.9.0--h9ee0642_0'
-        : 'biocontainers/seqkit:2.9.0--h9ee0642_0'}"  
+    container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
+    'oras://community.wave.seqera.io/library/seqkit:2.10.0--9a5d37887d7c4e09' : 
+    'community.wave.seqera.io/library/seqkit:2.10.0--03b4774218b4b7ef'}" 
 
     input:
     // expecting -> [ path/to/barcorde01 ]
@@ -329,5 +329,153 @@ process SEQKIT {
     # Get the longest contig
     seqkit sort -l \\
         -r $assembly_fasta | seqkit head -n 1 > ${barcordeName}_longest_contig.fasta
+    """
+}
+
+// Classification with kraken
+process KRAKEN2 {
+    errorStrategy 'ignore'
+    tag "classifying ${fastq_file.simpleName}"
+    publishDir "${params.outdir}/kraken", mode:'copy'  
+
+    container "${workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container
+        ? 'oras://community.wave.seqera.io/library/kraken2:2.14--508f454ac8eda8a9'
+        : 'community.wave.seqera.io/library/kraken2:2.14--83aa57048e304f01'}"  
+
+    input: 
+        path kraken_db
+        each path(fastq_file)  // [porechoped fastq]
+
+
+    output:
+        path "${filename}.classified.fastq"         , emit: fastq
+        path "${filename}.pathogen_names.tsv"       , emit: tsv
+        path "${filename}.report.txt"               , emit: txt
+
+    script:
+    filename = fastq_file.simpleName
+
+    """
+    kraken2 \\
+	    --db $kraken_db  \\
+	    --classified-out ${filename}.classified.fastq \\
+	    --output ${filename}.pathogen_names.tsv  \\
+	    --report ${filename}.report.txt  \\
+	    --use-names   \\
+	    --gzip-compressed $fastq_file
+    """
+}
+
+// Get the tsv file from kraken
+process LINUX_GREP {
+    errorStrategy 'ignore'
+    tag "generating final report"
+    publishDir "${params.outdir}/grep", mode:'copy' 
+
+    container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
+    'oras://community.wave.seqera.io/library/grep:3.4--dc86f0f44bb51896' : 
+    'community.wave.seqera.io/library/grep:3.4--845f7425f72cc8b4'}"
+
+    input:
+    path kraken_tsv
+
+    output:
+    path "${filename}.read_ids.txt"                 , emit: txt  // TSV file (may be empty)
+
+    script:
+    filename = kraken_tsv.simpleName
+
+    """
+    grep 'metapneumovirus' $kraken_tsv | cut -f 2 > ${filename}.read_ids.txt
+    """
+}
+
+// Selected only hmpv virus reads
+process SEQKIT_GREP {
+    errorStrategy 'ignore'
+    tag "generating final report"
+    publishDir "${params.outdir}/seqkit_grep", mode:'copy' 
+
+    container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
+    'oras://community.wave.seqera.io/library/seqkit:2.10.0--9a5d37887d7c4e09' : 
+    'community.wave.seqera.io/library/seqkit:2.10.0--03b4774218b4b7ef'}"
+    
+    input:
+        path read_ids_txt
+        path kraken_classified_fastq
+        
+    output:
+        path "${filename}.hmpv_class.fastq.gz"       ,  emit: gz
+
+    script:
+    filename = kraken_classified_fastq.simpleName
+
+    """
+    seqkit grep \\
+	    -f $read_ids_txt $kraken_classified_fastq | gzip  > ${filename}.hmpv_class.fastq.gz
+
+    """
+}
+
+// Best reference selection
+process AUTO_REF {
+    errorStrategy 'ignore'
+    tag "generating final report"
+    publishDir "${params.outdir}/auto_ref", mode:'copy' 
+
+    container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
+    'docker://samordil/python-pandas-dateutil:1.0.0' : 
+    'docker.io/samordil/python-pandas-dateutil:1.0.0'}"
+    
+    input:
+        path multi_ref_fasta
+        each path(fastq_file)
+        
+
+    output:
+        path "${filename}.best_ref.fasta"       ,  emit: fasta
+        path "*.json"                           ,  emit: json
+
+    script:
+    filename = fastq_file.simpleName
+
+    """
+   auto_ref.py \\
+        --reads $fastq_file \\
+	    --msa $multi_ref_fasta \\
+	    --output ${filename}.best_ref.fasta \\
+	    --threads $task.cpus \\
+	    --min-coverage 80 \\
+	    --preset map-ont
+    """
+}
+
+process MINIMAP_SAMTOOLS {
+    errorStrategy 'ignore'
+    tag "generating final report"
+    publishDir "${params.outdir}/consensus", mode:'copy' 
+
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'oras://community.wave.seqera.io/library/minimap2_samtools:5919d63e7b60a09d' :
+        'community.wave.seqera.io/library/minimap2_samtools:33bb43c18d22e29c' }"
+
+  tag {filename}
+
+    input:
+      path best_ref_fasta
+      path fastq_gz   // .bam file
+
+    output:
+      path "${filename}.20X.consensus.fasta"      , emit: fasta
+
+    script:
+    filename = bam_file.simpleName
+
+    """
+    minimap2 \\
+	-ax map-ont $best_ref_fasta $fastq_gz | samtools view -b -F 4 | samtools sort -o ${filename}.bam
+
+    # Call the consensus
+    samtools consensus --threads $task.cpus ${filename}.bam -aa -f fasta -d 20 -o ${filename}.20X.consensus.fasta    
     """
 }

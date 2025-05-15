@@ -16,7 +16,11 @@ nextflow.enable.dsl=2
             FLYE;
             QUAST;
             MULTIQC;
-            SEQKIT
+            SEQKIT;
+            KRAKEN2;
+            AUTO_REF;
+            LINUX_GREP;
+            SEQKIT_GREP
           } from "./modules/assembly_processes"
 
 /*
@@ -38,6 +42,15 @@ workflow {
 
     // Define human reference channel for an optional reference genome
     if (params.mash_db) { ch_mash_db= file(params.mash_db) } else { ch_mash_db = [] }
+
+    // Define kraken directory channel
+    Channel                                                     // Get kraken db directory
+        .fromPath(params.kraken_db, type: 'dir', maxDepth: 1)
+        .set { ch_kraken_db }
+
+    Channel                                                     // Get multiref file
+        .fromPath(params.multi_ref_fasta)
+        .set { ch_multiref }
  
     // Define fastq_pass directory channel
     Channel                                                     // Get raw fastq directory
@@ -67,24 +80,24 @@ workflow {
     // MODULE: Remove adapters
     PORECHOP (REMOVE_HUMAN_READS.out.fastq)
 
-    // MODULE: Denove genome assembly
-    FLYE (PORECHOP.out.fastq_gz)
+//     // MODULE: Denove genome assembly
+//     FLYE (PORECHOP.out.fastq_gz)
 
-    // Generate assembly statistics
-    QUAST(
-      FLYE.out.assembly_fasta
-    )
+//     // Generate assembly statistics
+//     QUAST(
+//       FLYE.out.assembly_fasta
+//     )
 
-    // Aggregage report for visualization
-    MULTIQC (
-      QUAST.out.quast_report_dir.collect(),
-      params.multiqc_title
-    )
+//     // Aggregage report for visualization
+//     MULTIQC (
+//       QUAST.out.quast_report_dir.collect(),
+//       params.multiqc_title
+//     )
 
-  // Get the longest contigs per sample
-    SEQKIT (
-      FLYE.out.assembly_fasta
-    )
+//   // Get the longest contigs per sample
+//     SEQKIT (
+//       FLYE.out.assembly_fasta
+//     )
 
     // MODULE: Classify reads
     MASH_CLASSIFICATION ( ch_mash_db,
@@ -94,6 +107,43 @@ workflow {
     // MODULE: Aggregate mash txts
     GENERATE_FINAL_REPORT (
         MASH_CLASSIFICATION.out.txt.collect()
+    )
+
+    /*
+    Classification using kraken2
+    */
+    // 
+    // Classification using kraken
+    KRAKEN2 (
+        ch_kraken_db,
+        PORECHOP.out.fastq_gz
+    )
+
+    // Get the read ids of hmpv
+    LINUX_GREP (
+        KRAKEN2.out.tsv
+    )
+
+    // Only pass TSVs with ≥1000 line to SEQKIT
+    LINUX_GREP.out.txt
+        .filter { file -> file.countLines() > 1000 }  // Skip empty files
+        .set {ch_read_ids}
+
+    SEQKIT_GREP (
+        ch_read_ids,
+        KRAKEN2.out.fastq
+    )
+
+    // Get the best reference
+    AUTO_REF (
+        ch_multiref,
+        SEQKIT_GREP.out.gz
+    )
+
+    // Generate consensus
+    MINIMAP_SAMTOOLS (
+        AUTO_REF.out.fasta,
+        SEQKIT_GREP.out.gz
     )
 }
 
