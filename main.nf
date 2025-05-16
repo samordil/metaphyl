@@ -46,7 +46,7 @@ workflow {
 
     // Define kraken directory channel
     Channel                                                     // Get kraken db directory
-        .fromPath(params.kraken_db, type: 'dir', maxDepth: 1)
+        .fromPath(params.kraken_db, type: 'dir')
         .set { ch_kraken_db }
 
     Channel                                                     // Get multiref file
