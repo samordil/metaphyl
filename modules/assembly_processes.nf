@@ -368,7 +368,7 @@ process KRAKEN2 {
 // Get the tsv file from kraken
 process LINUX_GREP {
     errorStrategy 'ignore'
-    tag "generating final report"
+    tag "generating ${filename} ids file"
     publishDir "${params.outdir}/grep", mode:'copy' 
 
     container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
@@ -392,7 +392,7 @@ process LINUX_GREP {
 // Selected only hmpv virus reads
 process SEQKIT_GREP {
     errorStrategy 'ignore'
-    tag "generating final report"
+    tag "Extracting ${sample_id} hmpv fastq reads"
     publishDir "${params.outdir}/seqkit_grep", mode:'copy' 
 
     container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
