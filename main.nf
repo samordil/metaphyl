@@ -120,6 +120,8 @@ workflow {
         PORECHOP.out.fastq_gz
     )
 
+    KRAKEN2.out.fastq.view()
+
     // Get the read ids of hmpv
     LINUX_GREP (
         KRAKEN2.out.tsv
@@ -138,7 +140,7 @@ workflow {
     // Join operation that will only keep matched pairs
     ch_read_ids.join(ch_kraken2_fastq).set { ch_paired_samples }
 
-    ch_paired_samples.view()
+    // ch_paired_samples.view()
         
     // // Extract hmpv reads only
     // SEQKIT_GREP (
