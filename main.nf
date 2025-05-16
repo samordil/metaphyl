@@ -131,7 +131,7 @@ workflow {
     LINUX_GREP.out.txt
         .filter { file -> file.countLines() > 1000 }  // Skip empty files
         .set {ch_read_ids}
-    ch_read_ids.out.view()
+    ch_read_ids.view()
 
     SEQKIT_GREP (
         ch_read_ids,
