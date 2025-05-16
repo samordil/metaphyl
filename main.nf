@@ -145,13 +145,15 @@ workflow {
         ch_paired_samples
     )
 
-    SEQKIT_GREP.out.gz.view()
+    // SEQKIT_GREP.out.gz.view()
 
-    // // Get the best reference
-    // AUTO_REF (
-    //     ch_multiref,
-    //     SEQKIT_GREP.out.gz
-    // )
+    // Get the best reference
+    AUTO_REF (
+        ch_multiref,
+        SEQKIT_GREP.out.gz
+    )
+
+    AUTO_REF.out.fasta.view()
 
     // // Generate consensus
     // MINIMAP_SAMTOOLS (

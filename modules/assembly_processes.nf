@@ -414,7 +414,7 @@ process SEQKIT_GREP {
 // Best reference selection
 process AUTO_REF {
     errorStrategy 'ignore'
-    tag "generating final report"
+    tag "Finding the best ref for ${filename}"
     publishDir "${params.outdir}/auto_ref", mode:'copy' 
 
     container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
