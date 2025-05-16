@@ -337,9 +337,9 @@ process KRAKEN2 {
     tag "classifying ${fastq_file.simpleName}"
     publishDir "${params.outdir}/kraken", mode:'copy'  
 
-    container "${workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container
-        ? 'oras://community.wave.seqera.io/library/kraken2:2.14--508f454ac8eda8a9'
-        : 'community.wave.seqera.io/library/kraken2:2.14--83aa57048e304f01'}"  
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/mulled-v2-8706a1dd73c6cc426e12dd4dd33a5e917b3989ae:c8cbdc8ff4101e6745f8ede6eb5261ef98bdaff4-0' :
+        'biocontainers/mulled-v2-8706a1dd73c6cc426e12dd4dd33a5e917b3989ae:c8cbdc8ff4101e6745f8ede6eb5261ef98bdaff4-0' }" 
 
     input: 
         path kraken_db
@@ -347,7 +347,7 @@ process KRAKEN2 {
 
 
     output:
-        path "${filename}.classified.out"         , emit: fastq
+        path "${filename}.classified.out.fastq"     , emit: fastq
         path "${filename}.pathogen_names.tsv"       , emit: tsv
         path "${filename}.report.txt"               , emit: txt
 
@@ -357,7 +357,7 @@ process KRAKEN2 {
     """
     kraken2 \\
 	    --db $kraken_db  \\
-	    --classified-out ${filename}.classified.out \\
+	    --classified-out ${filename}.classified.out.fastq \\
 	    --output ${filename}.pathogen_names.tsv  \\
 	    --report ${filename}.report.txt  \\
 	    --use-names   \\
