@@ -125,30 +125,37 @@ workflow {
         KRAKEN2.out.tsv
     )
 
-    // LINUX_GREP.out.txt.view()
-
     // Only pass TSVs with ≥1000 line to SEQKIT
     LINUX_GREP.out.txt
         .filter { file -> file.countLines() > 1000 }  // Skip empty files
-        .set {ch_read_ids}
-    ch_read_ids.view()
-    KRAKEN2.out.fastq.view()
+        .map { tuple(it.getSimpleName(), it) }
+        .set { ch_read_ids }
 
-    SEQKIT_GREP (
-        ch_read_ids,
-        KRAKEN2.out.fastq
-    )
+    KRAKEN2.out.fastq
+        .map { tuple(it.getSimpleName(), it) }
+        .set { ch_kraken2_fastq}
 
-    // Get the best reference
-    AUTO_REF (
-        ch_multiref,
-        SEQKIT_GREP.out.gz
-    )
+    // Join operation that will only keep matched pairs
+    ch_read_ids.join(ch_kraken2_fastq).view() 
+        
+    // ch_read_ids.view()
+    // KRAKEN2.out.fastq.view()
 
-    // Generate consensus
-    MINIMAP_SAMTOOLS (
-        AUTO_REF.out.fasta,
-        SEQKIT_GREP.out.gz
-    )
+    // SEQKIT_GREP (
+    //     ch_read_ids,
+    //     KRAKEN2.out.fastq
+    // )
+
+    // // Get the best reference
+    // AUTO_REF (
+    //     ch_multiref,
+    //     SEQKIT_GREP.out.gz
+    // )
+
+    // // Generate consensus
+    // MINIMAP_SAMTOOLS (
+    //     AUTO_REF.out.fasta,
+    //     SEQKIT_GREP.out.gz
+    // )
 }
 
