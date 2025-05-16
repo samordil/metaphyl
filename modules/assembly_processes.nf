@@ -204,7 +204,6 @@ process PORECHOP {
      porechop \\
         -i $barcordDir \\
         --threads $task.cpus \\
-        --format fastq.gz \\
         -o ${barcordeName}.porechopped.fastq.gz
     """
 }
@@ -348,7 +347,7 @@ process KRAKEN2 {
 
 
     output:
-        path "${filename}.classified.fastq"         , emit: fastq
+        path "${filename}.classified.out"         , emit: fastq
         path "${filename}.pathogen_names.tsv"       , emit: tsv
         path "${filename}.report.txt"               , emit: txt
 
@@ -358,7 +357,7 @@ process KRAKEN2 {
     """
     kraken2 \\
 	    --db $kraken_db  \\
-	    --classified-out ${filename}.classified.fastq \\
+	    --classified-out ${filename}.classified.out \\
 	    --output ${filename}.pathogen_names.tsv  \\
 	    --report ${filename}.report.txt  \\
 	    --use-names   \\
@@ -408,8 +407,7 @@ process SEQKIT_GREP {
 
     script:
     """
-    seqkit grep \\
-	    -f $read_ids_txt $kraken_classified_fastq | gzip  > ${sample_id}.hmpv_class.fastq.gz
+    seqkit grep -f $read_ids_txt $kraken_classified_fastq | gzip  > ${sample_id}.hmpv_class.fastq.gz
     """
 }
 
