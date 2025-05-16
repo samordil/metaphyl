@@ -132,6 +132,7 @@ workflow {
         .filter { file -> file.countLines() > 1000 }  // Skip empty files
         .set {ch_read_ids}
     ch_read_ids.view()
+    KRAKEN2.out.fastq.view()
 
     SEQKIT_GREP (
         ch_read_ids,
