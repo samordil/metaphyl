@@ -125,7 +125,7 @@ workflow {
         KRAKEN2.out.tsv
     )
 
-    LINUX_GREP.out.txt.view()
+    // LINUX_GREP.out.txt.view()
 
     // Only pass TSVs with ≥1000 line to SEQKIT
     LINUX_GREP.out.txt
