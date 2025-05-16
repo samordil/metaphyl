@@ -125,10 +125,13 @@ workflow {
         KRAKEN2.out.tsv
     )
 
+    LINUX_GREP.out.txt.view()
+
     // Only pass TSVs with ≥1000 line to SEQKIT
     LINUX_GREP.out.txt
         .filter { file -> file.countLines() > 1000 }  // Skip empty files
         .set {ch_read_ids}
+    ch_read_ids.out.view()
 
     SEQKIT_GREP (
         ch_read_ids,
