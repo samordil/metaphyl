@@ -136,15 +136,14 @@ workflow {
         .set { ch_kraken2_fastq}
 
     // Join operation that will only keep matched pairs
-    ch_read_ids.join(ch_kraken2_fastq).view() 
+    ch_read_ids.join(ch_kraken2_fastq).set { ch_paired_samples }
         
-    // ch_read_ids.view()
-    // KRAKEN2.out.fastq.view()
+    // Extract hmpv reads only
+    SEQKIT_GREP (
+        ch_paired_samples
+    )
 
-    // SEQKIT_GREP (
-    //     ch_read_ids,
-    //     KRAKEN2.out.fastq
-    // )
+    SEQKIT_GREP.out.gz.view()
 
     // // Get the best reference
     // AUTO_REF (

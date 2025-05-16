@@ -401,19 +401,15 @@ process SEQKIT_GREP {
     'community.wave.seqera.io/library/seqkit:2.10.0--03b4774218b4b7ef'}"
     
     input:
-        path read_ids_txt
-        path kraken_classified_fastq
+        tuple val(sample_id), path(read_ids_txt), path(kraken_classified_fastq)
         
     output:
-        path "${filename}.hmpv_class.fastq.gz"       ,  emit: gz
+        path "${sample_id}.hmpv_class.fastq.gz"       ,  emit: gz
 
     script:
-    filename = kraken_classified_fastq.simpleName
-
     """
     seqkit grep \\
-	    -f $read_ids_txt $kraken_classified_fastq | gzip  > ${filename}.hmpv_class.fastq.gz
-
+	    -f $read_ids_txt $kraken_classified_fastq | gzip  > ${sample_id}.hmpv_class.fastq.gz
     """
 }
 
