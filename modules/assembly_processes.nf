@@ -459,8 +459,7 @@ process MINIMAP_SAMTOOLS {
   tag {filename}
 
     input:
-      path best_ref_fasta
-      path fastq_gz   // .bam file
+    tuple path(best_ref_fasta), path(fastq_gz)
 
     output:
       path "${filename}.20X.consensus.fasta"      , emit: fasta

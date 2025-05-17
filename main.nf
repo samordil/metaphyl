@@ -153,12 +153,23 @@ workflow {
         SEQKIT_GREP.out.gz
     )
 
-    AUTO_REF.out.fasta.view()
+    // Prepare channel for MINIMAP_SAMTOOLS process
+    AUTO_REF.out.fasta
+        .map { tuple(it.getSimpleName(), it) }
+        .set { ch_best_ref }
+
+    SEQKIT_GREP.out.gz
+        .map { tuple(it.getSimpleName(), it) }
+        .set { ch_seqkit_grep_gz }
+
+    // Combine best reference with the corresponding fastq
+    ch_best_ref.join(ch_seqkit_grep_gz).set { ch_best_ref_fastq }
+
+    ch_best_ref_fastq.view()
 
     // // Generate consensus
     // MINIMAP_SAMTOOLS (
-    //     AUTO_REF.out.fasta,
-    //     SEQKIT_GREP.out.gz
+    //     ch_best_ref_fastq
     // )
 }
 
