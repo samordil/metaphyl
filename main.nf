@@ -138,7 +138,6 @@ workflow {
     // Join operation that will only keep matched pairs
     ch_read_ids.join(ch_kraken2_fastq).set { ch_paired_samples }
 
-    // ch_paired_samples.view()
         
     // Extract hmpv reads only
     SEQKIT_GREP (
@@ -165,13 +164,9 @@ workflow {
     // Combine best reference with the corresponding fastq
     ch_best_ref.join(ch_seqkit_grep_gz).set { ch_best_ref_fastq }
 
-    // ch_best_ref_fastq.view()
-
     // Generate consensus
     MINIMAP_SAMTOOLS (
         ch_best_ref_fastq
     )
-
-    MINIMAP_SAMTOOLS.out.fasta
 }
 

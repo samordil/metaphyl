@@ -452,9 +452,9 @@ process MINIMAP_SAMTOOLS {
     tag "generating ${sample_id} consesus sequence"
     publishDir "${params.outdir}/consensus", mode:'copy' 
 
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'oras://community.wave.seqera.io/library/minimap2_samtools:5919d63e7b60a09d' :
-        'community.wave.seqera.io/library/minimap2_samtools:33bb43c18d22e29c' }"
+    container "${workflow.containerEngine == 'singularity' || workflow.containerEngine == 'apptainer' ? 
+    'docker://samordil/artic-multipurpose:1.6.2' : 
+    'docker.io/samordil/artic-multipurpose:1.6.2'}"
 
     input:
     tuple val(sample_id), path(best_ref_fasta), path(fastq_gz)
@@ -468,6 +468,11 @@ process MINIMAP_SAMTOOLS {
 	-ax map-ont $best_ref_fasta $fastq_gz | samtools view -b -F 4 | samtools sort -o ${sample_id}.bam
 
     # Call the consensus
-    samtools consensus --threads $task.cpus ${sample_id}.bam -aa -f fasta -d 20 -o ${sample_id}.20X.consensus.fasta    
+    // samtools consensus --threads $task.cpus ${sample_id}.bam -aa -f fasta -d 20 -o ${sample_id}.20X.consensus.fasta    
+    samtools consensus \\
+        --threads $task.cpus ${sample_id}.bam \\
+        -aa \\
+        -f fasta \\
+        -d 20 | sed "s/^>/>${sample_id}|/" > ${sample_id}.20X.consensus.fasta
     """
 }
