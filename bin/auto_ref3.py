@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
 """
-Enhanced automatic reference genome selection with:
-- Better reference selection metrics
-- Improved error handling and logging
-- Resource management
-- More informative outputs
-- Optional BAM/BAI file output for all references
-- Cross-filesystem compatible file moving
+Enhanced automatic reference genome selection with consistent output file handling
 """
 
 import argparse
@@ -25,9 +19,9 @@ from typing import Dict, List, Tuple, Any, Optional
 from Bio import SeqIO
 
 # Constants
-MINIMAP2_PRESET = "map-ont"  # Default for Oxford Nanopore reads
-DEFAULT_MIN_COVERAGE = 80.0  # Minimum coverage percentage to consider
-MAX_TMP_RETRIES = 3  # Max retries for temp file operations
+MINIMAP2_PRESET = "map-ont"
+DEFAULT_MIN_COVERAGE = 80.0
+MAX_TMP_RETRIES = 3
 
 class PipelineError(Exception):
     """Custom exception for pipeline failures with error codes"""
@@ -45,7 +39,7 @@ def configure_logging(log_file: str = "auto_ref.log") -> None:
             logging.FileHandler(log_file)
         ]
     )
-    logging.captureWarnings(True)  # Capture warnings as logs
+    logging.captureWarnings(True)
 
 def run_command(cmd: str, retries: int = 1) -> subprocess.CompletedProcess:
     """Execute shell command with robust error handling and retries"""
@@ -73,35 +67,44 @@ def run_command(cmd: str, retries: int = 1) -> subprocess.CompletedProcess:
 def calculate_reference_score(result: Dict[str, Any]) -> float:
     """Calculate a weighted score for reference selection"""
     weights = {
-        'coverage': 0.5,    # Most important - percentage covered
-        'meandepth': 0.3,   # Important - sequencing depth
-        'numreads': 0.2     # Less important - raw read count
+        'coverage': 0.5,
+        'meandepth': 0.3,
+        'numreads': 0.2
     }
     return (result['coverage'] * weights['coverage'] +
             result['meandepth'] * weights['meandepth'] +
-            result['numreads'] * weights['numreads'] / 1000)  # Scale down large numbers
+            result['numreads'] * weights['numreads'] / 1000)
 
-def safe_move(src: Path, dst: Path) -> None:
-    """Cross-filesystem compatible file move with error handling"""
+def atomic_write(src: Path, dst: Path) -> None:
+    """Atomic file write operation with cross-device support"""
+    temp_dst = dst.with_suffix('.tmp')
     try:
-        shutil.move(str(src), str(dst))
+        # Copy content first
+        if src.is_dir():
+            shutil.copytree(src, temp_dst)
+        else:
+            shutil.copy2(src, temp_dst)
+        
+        # Then atomic rename
+        temp_dst.replace(dst)
     except Exception as e:
-        logging.error(f"Failed to move {src} to {dst}: {str(e)}")
-        raise PipelineError(f"File move failed: {str(e)}", exit_code=45)
+        if temp_dst.exists():
+            temp_dst.unlink()
+        raise PipelineError(f"Failed to write {dst}: {str(e)}", exit_code=45)
 
-def process_reference(args: Tuple[str, str, Path, str, bool, Optional[Path]]) -> Dict[str, Any]:
+def process_reference(args: Tuple[str, str, Path, str, bool, Path]) -> Dict[str, Any]:
     """Process a single reference genome with improved error handling"""
-    ref_id, ref_seq, reads, preset, keep_bam, temp_dir = args
+    ref_id, ref_seq, reads, preset, keep_bam, work_dir = args
     temp_files = []
     output_files = {}
     
     try:
-        # Create temp file in specified directory or system temp
-        temp_kwargs = {'mode': 'w', 'delete': False}
-        if temp_dir:
-            temp_kwargs['dir'] = str(temp_dir)
-            
-        with tempfile.NamedTemporaryFile(**temp_kwargs) as ref_file:
+        # Create all temp files in the working directory
+        with tempfile.NamedTemporaryFile(
+            mode='w', 
+            dir=str(work_dir),
+            delete=False
+        ) as ref_file:
             temp_files.append(ref_file.name)
             ref_file.write(f">{ref_id}\n{ref_seq}\n")
             ref_file.flush()
@@ -125,21 +128,18 @@ def process_reference(args: Tuple[str, str, Path, str, bool, Optional[Path]]) ->
             run_command(f"samtools sort {bam_file} -o {sorted_bam}")
             
             if keep_bam:
-                # Generate BAM index if we're keeping the BAM file
                 run_command(f"samtools index {sorted_bam}")
                 bai_file = f"{sorted_bam}.bai"
-                
-                # Store output file paths
-                output_files['sorted_bam'] = sorted_bam
-                output_files['bai_file'] = bai_file
-                output_files['ref_id'] = ref_id
+                output_files.update({
+                    'sorted_bam': sorted_bam,
+                    'bai_file': bai_file,
+                    'ref_id': ref_id
+                })
             else:
                 temp_files.append(sorted_bam)
             
             # 3. Calculate coverage
             result = run_command(f"samtools coverage {sorted_bam}")
-            
-            # Parse coverage output
             lines = result.stdout.strip().split('\n')
             if len(lines) < 2:
                 raise PipelineError("Incomplete coverage data from samtools")
@@ -175,7 +175,6 @@ def process_reference(args: Tuple[str, str, Path, str, bool, Optional[Path]]) ->
             'error': str(e)
         }
     finally:
-        # Clean up temp files but keep output files if keep_bam is True
         for f in temp_files:
             try:
                 if os.path.exists(f) and f not in output_files.values():
@@ -186,19 +185,19 @@ def process_reference(args: Tuple[str, str, Path, str, bool, Optional[Path]]) ->
 def auto_map(reads: Path, msa: Path, output: Path, 
             threads: int, min_coverage: float = DEFAULT_MIN_COVERAGE,
             keep_bam: bool = False) -> None:
-    """Core mapping logic with improved reference selection"""
+    """Core mapping logic with consistent output file handling"""
+    # Create working directory for all temporary files
+    work_dir = output.parent / f"{output.stem}_temp"
+    work_dir.mkdir(exist_ok=True)
+    
     try:
-        # Create temp directory in output location to avoid cross-device moves
-        temp_dir = output.parent / "temp_auto_ref"
-        temp_dir.mkdir(exist_ok=True)
-        
         # 1. Parse MSA
         logging.info(f"Parsing MSA: {msa}")
         refs = [(record.id, str(record.seq)) for record in SeqIO.parse(msa, "fasta")]
         if not refs:
             raise PipelineError("No references found in MSA", exit_code=10)
 
-        # 2. Process references with progress tracking
+        # 2. Process references
         logging.info(f"Processing {len(refs)} references with {threads} threads")
         successful_results = []
         
@@ -206,7 +205,7 @@ def auto_map(reads: Path, msa: Path, output: Path,
             futures = {
                 executor.submit(
                     process_reference, 
-                    (ref_id, seq, reads, MINIMAP2_PRESET, keep_bam, temp_dir)
+                    (ref_id, seq, reads, MINIMAP2_PRESET, keep_bam, work_dir)
                 ): ref_id for ref_id, seq in refs
             }
             
@@ -242,73 +241,81 @@ def auto_map(reads: Path, msa: Path, output: Path,
             f"  Selection Score: {best_ref['score']:.2f}"
         )
 
-        # 4. Atomic write outputs
-        temp_out = output.with_suffix('.tmp')
-        try:
-            with open(temp_out, 'w') as f:
-                seq = next(r[1] for r in refs if r[0] == best_ref['ref_id'])
-                f.write(f">{best_ref['ref_id']}\n{seq.replace('-', '')}\n")
-            
-            safe_move(temp_out, output)
-            
-            # Write comprehensive metadata
-            metadata = {
-                'best_reference': best_ref['ref_id'],
-                'selection_metrics': best_ref,
-                'timestamp': datetime.datetime.now().isoformat(),
-                'parameters': {
-                    'reads_file': str(reads),
-                    'msa_file': str(msa),
-                    'min_coverage': min_coverage,
-                    'threads': threads,
-                    'keep_bam': keep_bam
-                },
-                'all_results': successful_results,
-                'pipeline_version': '1.2.0'
-            }
-            
-            if keep_bam:
-                metadata['all_bam_files'] = {}
-                for result in successful_results:
-                    if 'output_files' in result:
-                        ref_id = result['ref_id']
-                        safe_ref_id = "".join(c if c.isalnum() else "_" for c in ref_id)
-                        final_bam = output.parent / f"{output.stem}.{safe_ref_id}.sorted.bam"
-                        final_bai = output.parent / f"{output.stem}.{safe_ref_id}.sorted.bam.bai"
-                        
-                        safe_move(result['output_files']['sorted_bam'], final_bam)
-                        safe_move(result['output_files']['bai_file'], final_bai)
-                        
-                        metadata['all_bam_files'][ref_id] = {
-                            'bam': str(final_bam),
-                            'bai': str(final_bai)
-                        }
-                        
-                        logging.info(f"Saved alignment files for {ref_id}:")
-                        logging.info(f"  BAM: {final_bam}")
-                        logging.info(f"  BAI: {final_bai}")
-            
-            with open(f"{output}.metadata.json", 'w') as f:
-                json.dump(metadata, f, indent=2)
+        # 4. Write output files
+        # Create best reference FASTA
+        temp_fasta = work_dir / "best_ref.tmp.fasta"
+        with open(temp_fasta, 'w') as f:
+            seq = next(r[1] for r in refs if r[0] == best_ref['ref_id'])
+            f.write(f">{best_ref['ref_id']}\n{seq.replace('-', '')}\n")
+        atomic_write(temp_fasta, output)
+        
+        # Create metadata JSON
+        metadata = {
+            'best_reference': best_ref['ref_id'],
+            'selection_metrics': best_ref,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'parameters': {
+                'reads_file': str(reads),
+                'msa_file': str(msa),
+                'min_coverage': min_coverage,
+                'threads': threads,
+                'keep_bam': keep_bam
+            },
+            'all_results': successful_results,
+            'pipeline_version': '1.3.0'
+        }
+        
+        metadata_file = output.with_suffix('.metadata.json')
+        temp_metadata = work_dir / "metadata.tmp.json"
+        with open(temp_metadata, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        atomic_write(temp_metadata, metadata_file)
+        
+        # Handle BAM files if requested
+        if keep_bam:
+            bam_files_meta = {}
+            for result in successful_results:
+                if 'output_files' not in result:
+                    continue
+                    
+                ref_id = result['ref_id']
+                safe_ref_id = "".join(c if c.isalnum() else "_" for c in ref_id)
                 
-        except Exception as e:
-            if temp_out.exists():
-                temp_out.unlink()
-            raise PipelineError(f"Failed to write output: {str(e)}", exit_code=40)
+                # Define final file names
+                final_bam = output.with_name(f"{output.stem}.{safe_ref_id}.sorted.bam")
+                final_bai = output.with_name(f"{output.stem}.{safe_ref_id}.sorted.bam.bai")
+                
+                # Move files atomically
+                atomic_write(Path(result['output_files']['sorted_bam']), final_bam)
+                atomic_write(Path(result['output_files']['bai_file']), final_bai)
+                
+                bam_files_meta[ref_id] = {
+                    'bam': str(final_bam.name),
+                    'bai': str(final_bai.name)
+                }
+                
+                logging.info(f"Saved alignment for {ref_id}:")
+                logging.info(f"  BAM: {final_bam.name}")
+                logging.info(f"  BAI: {final_bai.name}")
+            
+            # Update metadata with BAM file info
+            metadata['bam_files'] = bam_files_meta
+            with open(temp_metadata, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            atomic_write(temp_metadata, metadata_file)
             
     finally:
-        # Clean up temp directory
+        # Clean up working directory
         try:
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir)
+            shutil.rmtree(work_dir)
         except Exception as e:
-            logging.warning(f"Could not remove temp directory {temp_dir}: {str(e)}")
+            logging.warning(f"Could not remove working directory {work_dir}: {str(e)}")
 
 def main():
     configure_logging()
     
     parser = argparse.ArgumentParser(
-        description="Enhanced automated reference selection for genomic pipelines",
+        description="Automated reference selection with consistent output files",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("--reads", type=Path, required=True,
@@ -324,7 +331,7 @@ def main():
     parser.add_argument("--preset", type=str, default=MINIMAP2_PRESET,
                       help="Minimap2 preset for mapping")
     parser.add_argument("--keep-bam", action="store_true",
-                      help="Keep all sorted BAM and BAI files (not just for best reference)")
+                      help="Keep all sorted BAM and BAI files with consistent naming")
     
     args = parser.parse_args()
 
