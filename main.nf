@@ -165,11 +165,13 @@ workflow {
     // Combine best reference with the corresponding fastq
     ch_best_ref.join(ch_seqkit_grep_gz).set { ch_best_ref_fastq }
 
-    ch_best_ref_fastq.view()
+    // ch_best_ref_fastq.view()
 
-    // // Generate consensus
-    // MINIMAP_SAMTOOLS (
-    //     ch_best_ref_fastq
-    // )
+    // Generate consensus
+    MINIMAP_SAMTOOLS (
+        ch_best_ref_fastq
+    )
+
+    MINIMAP_SAMTOOLS.out.fasta
 }
 

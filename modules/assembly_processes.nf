@@ -449,29 +449,25 @@ process AUTO_REF {
 
 process MINIMAP_SAMTOOLS {
     errorStrategy 'ignore'
-    tag "generating final report"
+    tag "generating ${sample_id} consesus sequence"
     publishDir "${params.outdir}/consensus", mode:'copy' 
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'oras://community.wave.seqera.io/library/minimap2_samtools:5919d63e7b60a09d' :
         'community.wave.seqera.io/library/minimap2_samtools:33bb43c18d22e29c' }"
 
-  tag {filename}
-
     input:
-    tuple path(best_ref_fasta), path(fastq_gz)
+    tuple val(sample_id), path(best_ref_fasta), path(fastq_gz)
 
     output:
-      path "${filename}.20X.consensus.fasta"      , emit: fasta
+      path "${sample_id}.20X.consensus.fasta"      , emit: fasta
 
     script:
-    filename = bam_file.simpleName
-
     """
     minimap2 \\
-	-ax map-ont $best_ref_fasta $fastq_gz | samtools view -b -F 4 | samtools sort -o ${filename}.bam
+	-ax map-ont $best_ref_fasta $fastq_gz | samtools view -b -F 4 | samtools sort -o ${sample_id}.bam
 
     # Call the consensus
-    samtools consensus --threads $task.cpus ${filename}.bam -aa -f fasta -d 20 -o ${filename}.20X.consensus.fasta    
+    samtools consensus --threads $task.cpus ${sample_id}.bam -aa -f fasta -d 20 -o ${sample_id}.20X.consensus.fasta    
     """
 }
