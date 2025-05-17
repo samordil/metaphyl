@@ -468,7 +468,7 @@ process MINIMAP_SAMTOOLS {
 	-ax map-ont $best_ref_fasta $fastq_gz | samtools view -b -F 4 | samtools sort -o ${sample_id}.bam
 
     # Call the consensus
-    // samtools consensus --threads $task.cpus ${sample_id}.bam -aa -f fasta -d 20 -o ${sample_id}.20X.consensus.fasta    
+    # samtools consensus --threads $task.cpus ${sample_id}.bam -aa -f fasta -d 20 -o ${sample_id}.20X.consensus.fasta    
     samtools consensus \\
         --threads $task.cpus ${sample_id}.bam \\
         -aa \\
