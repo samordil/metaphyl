@@ -413,7 +413,7 @@ process SEQKIT_GREP {
 
 // Best reference selection
 process AUTO_REF {
-    errorStrategy 'ignore'
+    // errorStrategy 'ignore'
     tag "Finding the best ref for ${filename}"
     publishDir "${params.outdir}/auto_ref", mode:'copy' 
 
