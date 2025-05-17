@@ -6,6 +6,7 @@ Enhanced automatic reference genome selection with:
 - Resource management
 - More informative outputs
 - Optional BAM/BAI file output for all references
+- Cross-filesystem compatible file moving
 """
 
 import argparse
@@ -13,6 +14,7 @@ import datetime
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -79,14 +81,27 @@ def calculate_reference_score(result: Dict[str, Any]) -> float:
             result['meandepth'] * weights['meandepth'] +
             result['numreads'] * weights['numreads'] / 1000)  # Scale down large numbers
 
-def process_reference(args: Tuple[str, str, Path, str, bool]) -> Dict[str, Any]:
+def safe_move(src: Path, dst: Path) -> None:
+    """Cross-filesystem compatible file move with error handling"""
+    try:
+        shutil.move(str(src), str(dst))
+    except Exception as e:
+        logging.error(f"Failed to move {src} to {dst}: {str(e)}")
+        raise PipelineError(f"File move failed: {str(e)}", exit_code=45)
+
+def process_reference(args: Tuple[str, str, Path, str, bool, Optional[Path]]) -> Dict[str, Any]:
     """Process a single reference genome with improved error handling"""
-    ref_id, ref_seq, reads, preset, keep_bam = args
+    ref_id, ref_seq, reads, preset, keep_bam, temp_dir = args
     temp_files = []
     output_files = {}
     
     try:
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as ref_file:
+        # Create temp file in specified directory or system temp
+        temp_kwargs = {'mode': 'w', 'delete': False}
+        if temp_dir:
+            temp_kwargs['dir'] = str(temp_dir)
+            
+        with tempfile.NamedTemporaryFile(**temp_kwargs) as ref_file:
             temp_files.append(ref_file.name)
             ref_file.write(f">{ref_id}\n{ref_seq}\n")
             ref_file.flush()
@@ -117,7 +132,7 @@ def process_reference(args: Tuple[str, str, Path, str, bool]) -> Dict[str, Any]:
                 # Store output file paths
                 output_files['sorted_bam'] = sorted_bam
                 output_files['bai_file'] = bai_file
-                output_files['ref_id'] = ref_id  # Store reference ID for naming
+                output_files['ref_id'] = ref_id
             else:
                 temp_files.append(sorted_bam)
             
@@ -129,7 +144,7 @@ def process_reference(args: Tuple[str, str, Path, str, bool]) -> Dict[str, Any]:
             if len(lines) < 2:
                 raise PipelineError("Incomplete coverage data from samtools")
             
-            headers = [h.lower() for h in lines[0].split('\t')]  # Normalize headers
+            headers = [h.lower() for h in lines[0].split('\t')]
             data = lines[1].split('\t')
             
             if len(headers) != len(data):
@@ -173,6 +188,10 @@ def auto_map(reads: Path, msa: Path, output: Path,
             keep_bam: bool = False) -> None:
     """Core mapping logic with improved reference selection"""
     try:
+        # Create temp directory in output location to avoid cross-device moves
+        temp_dir = output.parent / "temp_auto_ref"
+        temp_dir.mkdir(exist_ok=True)
+        
         # 1. Parse MSA
         logging.info(f"Parsing MSA: {msa}")
         refs = [(record.id, str(record.seq)) for record in SeqIO.parse(msa, "fasta")]
@@ -187,7 +206,7 @@ def auto_map(reads: Path, msa: Path, output: Path,
             futures = {
                 executor.submit(
                     process_reference, 
-                    (ref_id, seq, reads, MINIMAP2_PRESET, keep_bam)
+                    (ref_id, seq, reads, MINIMAP2_PRESET, keep_bam, temp_dir)
                 ): ref_id for ref_id, seq in refs
             }
             
@@ -209,12 +228,10 @@ def auto_map(reads: Path, msa: Path, output: Path,
         if not successful_results:
             raise PipelineError("All reference mappings failed", exit_code=20)
         
-        # Filter by minimum coverage
         filtered_results = [r for r in successful_results if r['coverage'] >= min_coverage]
         if not filtered_results:
             raise PipelineError(f"No references met minimum coverage of {min_coverage}%", exit_code=30)
         
-        # Select by weighted score
         best_ref = max(filtered_results, key=lambda x: x['score'])
         
         logging.info(
@@ -232,18 +249,12 @@ def auto_map(reads: Path, msa: Path, output: Path,
                 seq = next(r[1] for r in refs if r[0] == best_ref['ref_id'])
                 f.write(f">{best_ref['ref_id']}\n{seq.replace('-', '')}\n")
             
-            # Final atomic move
-            temp_out.replace(output)
+            safe_move(temp_out, output)
             
             # Write comprehensive metadata
             metadata = {
                 'best_reference': best_ref['ref_id'],
-                'selection_metrics': {
-                    'coverage': best_ref['coverage'],
-                    'meandepth': best_ref['meandepth'],
-                    'numreads': best_ref['numreads'],
-                    'score': best_ref['score']
-                },
+                'selection_metrics': best_ref,
                 'timestamp': datetime.datetime.now().isoformat(),
                 'parameters': {
                     'reads_file': str(reads),
@@ -253,52 +264,45 @@ def auto_map(reads: Path, msa: Path, output: Path,
                     'keep_bam': keep_bam
                 },
                 'all_results': successful_results,
-                'pipeline_version': '1.1.0'
+                'pipeline_version': '1.2.0'
             }
             
             if keep_bam:
-                # Include all BAM file paths in metadata
-                metadata['all_bam_files'] = {
-                    res['ref_id']: {
-                        'bam': res.get('output_files', {}).get('sorted_bam'),
-                        'bai': res.get('output_files', {}).get('bai_file')
-                    }
-                    for res in successful_results if 'output_files' in res
-                }
+                metadata['all_bam_files'] = {}
+                for result in successful_results:
+                    if 'output_files' in result:
+                        ref_id = result['ref_id']
+                        safe_ref_id = "".join(c if c.isalnum() else "_" for c in ref_id)
+                        final_bam = output.parent / f"{output.stem}.{safe_ref_id}.sorted.bam"
+                        final_bai = output.parent / f"{output.stem}.{safe_ref_id}.sorted.bam.bai"
+                        
+                        safe_move(result['output_files']['sorted_bam'], final_bam)
+                        safe_move(result['output_files']['bai_file'], final_bai)
+                        
+                        metadata['all_bam_files'][ref_id] = {
+                            'bam': str(final_bam),
+                            'bai': str(final_bai)
+                        }
+                        
+                        logging.info(f"Saved alignment files for {ref_id}:")
+                        logging.info(f"  BAM: {final_bam}")
+                        logging.info(f"  BAI: {final_bai}")
             
             with open(f"{output}.metadata.json", 'w') as f:
                 json.dump(metadata, f, indent=2)
-                
-            # Move all BAM and BAI files to final location if keep_bam is True
-            if keep_bam:
-                output_dir = output.parent
-                base_name = output.stem
-                
-                for result in successful_results:
-                    if 'output_files' in result and result['output_files']:
-                        ref_id = result['ref_id']
-                        # Sanitize ref_id for filename
-                        safe_ref_id = "".join(c if c.isalnum() else "_" for c in ref_id)
-                        
-                        final_bam = output_dir / f"{base_name}.{safe_ref_id}.sorted.bam"
-                        final_bai = output_dir / f"{base_name}.{safe_ref_id}.sorted.bam.bai"
-                        
-                        os.rename(result['output_files']['sorted_bam'], final_bam)
-                        os.rename(result['output_files']['bai_file'], final_bai)
-                        
-                        logging.info(f"Saved BAM file for {ref_id}: {final_bam}")
-                        logging.info(f"Saved BAI file for {ref_id}: {final_bai}")
                 
         except Exception as e:
             if temp_out.exists():
                 temp_out.unlink()
             raise PipelineError(f"Failed to write output: {str(e)}", exit_code=40)
-
-    except Exception as e:
-        logging.critical(f"Pipeline failed: {str(e)}", exc_info=True)
-        if isinstance(e, PipelineError):
-            raise e
-        raise PipelineError(str(e), exit_code=50)
+            
+    finally:
+        # Clean up temp directory
+        try:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+        except Exception as e:
+            logging.warning(f"Could not remove temp directory {temp_dir}: {str(e)}")
 
 def main():
     configure_logging()
@@ -325,7 +329,6 @@ def main():
     args = parser.parse_args()
 
     try:
-        # Validate inputs
         if not args.reads.exists():
             raise PipelineError(f"Reads file not found: {args.reads}", exit_code=60)
         if not args.msa.exists():
