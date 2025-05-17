@@ -434,13 +434,14 @@ process AUTO_REF {
     filename = fastq_file.simpleName
 
     """
-   auto_ref.py \\
+   auto_ref3.py \\
         --reads $fastq_file \\
 	    --msa $multi_ref_fasta \\
 	    --output ${filename}.best_ref.fasta \\
 	    --threads $task.cpus \\
 	    --min-coverage 80 \\
-	    --preset map-ont
+	    --preset map-ont \\
+        --keep-bam
     """
 }
 
