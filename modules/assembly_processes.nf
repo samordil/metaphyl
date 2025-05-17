@@ -429,7 +429,7 @@ process AUTO_REF {
     output:
         path "${filename}.best_ref.fasta"       ,  emit: fasta
         path "*.json"                           ,  emit: json
-        path "*.bam"   optional: true           ,  emit: bam
+        path "*.bam",   optional: true           ,  emit: bam
         path "*.bai",  optional: true           ,  emit: bai
 
     script:
