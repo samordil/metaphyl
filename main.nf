@@ -81,6 +81,9 @@ workflow {
     // MODULE: Remove adapters
     PORECHOP (REMOVE_HUMAN_READS.out.fastq)
 
+    /* 
+        Denovo assemble subworkflow
+    */
     // MODULE: Denove genome assembly
     FLYE (PORECHOP.out.fastq_gz)
 
@@ -95,10 +98,13 @@ workflow {
       params.multiqc_title
     )
 
-    // Get the longest contigs per sample
+   // Get the longest contigs per sample
     SEQKIT (
       FLYE.out.assembly_fasta
     )
+    /* 
+       End of denovo assemble subworkflow
+    */
 
     // MODULE: Classify reads
     MASH_CLASSIFICATION ( ch_mash_db,
