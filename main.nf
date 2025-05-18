@@ -81,24 +81,24 @@ workflow {
     // MODULE: Remove adapters
     PORECHOP (REMOVE_HUMAN_READS.out.fastq)
 
-//     // MODULE: Denove genome assembly
-//     FLYE (PORECHOP.out.fastq_gz)
+    // MODULE: Denove genome assembly
+    FLYE (PORECHOP.out.fastq_gz)
 
-//     // Generate assembly statistics
-//     QUAST(
-//       FLYE.out.assembly_fasta
-//     )
+    // Generate assembly statistics
+    QUAST(
+      FLYE.out.assembly_fasta
+    )
 
-//     // Aggregage report for visualization
-//     MULTIQC (
-//       QUAST.out.quast_report_dir.collect(),
-//       params.multiqc_title
-//     )
+    // Aggregage report for visualization
+    MULTIQC (
+      QUAST.out.quast_report_dir.collect(),
+      params.multiqc_title
+    )
 
-//   // Get the longest contigs per sample
-//     SEQKIT (
-//       FLYE.out.assembly_fasta
-//     )
+    // Get the longest contigs per sample
+    SEQKIT (
+      FLYE.out.assembly_fasta
+    )
 
     // MODULE: Classify reads
     MASH_CLASSIFICATION ( ch_mash_db,
